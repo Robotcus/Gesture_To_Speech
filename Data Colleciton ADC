@@ -1,0 +1,46 @@
+import time
+import csv
+import board
+import busio
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
+
+GESTURE_COUNT = 100
+GESTURE_DURATION = 5  # seconds
+WAIT_DURATION = 5  # seconds
+RELEASE_TIME = 3  # seconds before the end of GESTURE_DURATION
+
+def main():
+    # Initialize the I2C bus and ADC
+    i2c = busio.I2C(board.SCL, board.SDA)
+    ads = ADS.ADS1115(i2c)
+    chan = AnalogIn(ads, ADS.P0)  # Assuming you've connected the EMG output to A0 on the ADS1115
+
+    for _ in range(GESTURE_COUNT):
+        input("Press Enter to start collecting gesture data...")
+        print("Make a fist gesture now!")
+
+        gesture_data = []
+
+        start_time = time.time()
+        while (time.time() - start_time) < GESTURE_DURATION:
+            gesture_data.append(chan.value)
+
+            # Inform user to release their fist 2 seconds before the end
+            if (time.time() - start_time) > GESTURE_DURATION - RELEASE_TIME and (time.time() - start_time) < GESTURE_DURATION - RELEASE_TIME + 0.5:
+                print("Release your fist in 2 seconds...")
+
+            time.sleep(0.01)  # Sleep for 10ms for smoother readings
+
+        # Save data to CSV
+        with open('fist_gestures.csv', 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["fist"] + gesture_data)
+        print(f"Data for fist gesture {_ + 1} saved. Waiting for next gesture...")
+
+        time.sleep(WAIT_DURATION)
+
+    print("Data collection complete.")
+
+if __name__ == "__main__":
+    main()
