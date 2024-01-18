@@ -1,0 +1,75 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+import joblib
+from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import LabelEncoder
+
+# Paths to your datasets
+click_gesture_data_path = '/home/robotcus/Documents/Gesture_To_Voice/Click_Gesture_CSV.csv'
+hello_gesture_data_path = '/home/robotcus/Documents/Gesture_To_Voice/fist_gesture_data_CSV.csv'
+welcome_gesture_data_path = '/home/robotcus/Documents/Gesture_To_Voice/two_gesture_data_CSV.csv'
+you_gesture_data_path = '/home/robotcus/Documents/Gesture_To_Voice/four_gesture_data_CSV.csv'
+
+# Load the datasets
+click_gesture_data = pd.read_csv(click_gesture_data_path)
+hello_gesture_data = pd.read_csv(hello_gesture_data_path)
+welcome_gesture_data = pd.read_csv(welcome_gesture_data_path)
+you_gesture_data = pd.read_csv(you_gesture_data_path)
+
+def extract_features(data_row):
+    mean = data_row.mean()
+    std_dev = data_row.std()
+    variance = data_row.var()
+    median = data_row.median()
+    data_range = data_row.max() - data_row.min()
+    mav = data_row.abs().mean()
+    zc = ((data_row.values[:-1] * data_row.values[1:]) < 0).sum()  # Zero crossings
+    ssc = ((np.diff(np.sign(np.diff(data_row))) != 0)).sum()  # Slope sign changes
+    wl = np.abs(np.diff(data_row)).sum()  # Waveform length
+
+    return pd.Series([mean, std_dev, variance, median, data_range, mav, zc, ssc, wl])
+
+# Apply the feature extraction to each dataset
+click_features = click_gesture_data.drop(columns=['Gesture_Name']).apply(extract_features, axis=1)
+hello_features = hello_gesture_data.drop(columns=['Gesture_Name']).apply(extract_features, axis=1)
+welcome_features = welcome_gesture_data.drop(columns=['Gesture_Name']).apply(extract_features, axis=1)
+you_features = you_gesture_data.drop(columns=['Gesture_Name']).apply(extract_features, axis=1)
+
+# Add the gesture name back for labeling
+click_features['Gesture_Name'] = click_gesture_data['Gesture_Name']
+hello_features['Gesture_Name'] = hello_gesture_data['Gesture_Name']
+welcome_features['Gesture_Name'] = welcome_gesture_data['Gesture_Name']
+you_features['Gesture_Name'] = you_gesture_data['Gesture_Name']
+
+# Combine all features into a single DataFrame
+combined_features = pd.concat([click_features, hello_features, welcome_features, you_features])
+
+# Separate features and labels
+X = combined_features.drop(columns=['Gesture_Name'])  # Features
+y = combined_features['Gesture_Name']  # Labels
+
+# Encode gesture names to numerical labels
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+
+# Splitting the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42)
+
+# Training the Random Forest model
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Predict on test set
+y_pred = rf_model.predict(X_test)
+
+# Calculating the accuracy
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Model Accuracy: {accuracy}")
+
+# Exporting the trained model and label encoder
+model_filename = 'random_forest_gesture_model_DINNER.joblib'
+encoder_filename = 'label_encoder_DINNER.joblib'
+joblib.dump(rf_model, model_filename)
+joblib.dump(label_encoder, encoder_filename)
