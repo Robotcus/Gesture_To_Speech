@@ -1,0 +1,82 @@
+import numpy as np
+import pandas as pd
+import joblib
+import time
+import board
+import busio
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
+import pygame
+
+# Load the Random Forest model and the label encoder
+model = joblib.load('/home/robotcus/Documents/Gesture_To_Voice/random_forest_gesture_model.joblib')
+label_encoder = joblib.load('/home/robotcus/Documents/Gesture_To_Voice/label_encoder.joblib')
+
+#Intilaise Sound
+pygame.init()
+pygame.mixer.init()
+sounds = {
+    "Click": '/home/robotcus/Documents/Gesture_To_Voice/Sub_Message_Short.mp3',
+    "Welcome Gesture": '/home/robotcus/Documents/Gesture_To_Voice/Sub_Message_Short.mp3',
+    "Hello": '/home/robotcus/Documents/Gesture_To_Voice/Sub_Message_Short.mp3',
+    "You" : '/home/robotcus/Documents/Gesture_To_Voice/Sub_Message_Short.mp3',
+    # ... add more gestures and their corresponding file paths here
+}
+def collect_emg_data():
+    # Initialize the I2C bus and ADC
+    i2c = busio.I2C(board.SCL, board.SDA)
+    ads = ADS.ADS1115(i2c)
+    chan = AnalogIn(ads, ADS.P0)  # Assuming the EMG output is connected to A0 on the ADS1115
+
+    GESTURE_DURATION = 1  # seconds
+    data_points = []
+
+    start_time = time.time()
+    while (time.time() - start_time) < GESTURE_DURATION:
+        data_points.append(chan.value)
+        time.sleep(0.01)  # Sleep for 10ms for smoother readings
+
+    return pd.Series(data_points[:47])  # Truncate or pad data points as needed, convert to pandas Series
+
+def extract_features(data_row):
+    """
+    Extract features from a single instance of EMG data using pandas.
+    Adapt this function based on the feature extraction method used during model training.
+    """
+    mean = data_row.mean()
+    std_dev = data_row.std()
+    variance = data_row.var()
+    median = data_row.median()
+    data_range = data_row.max() - data_row.min()
+    mav = data_row.abs().mean()
+    zc = ((data_row.values[:-1] * data_row.values[1:]) < 0).sum()  # Zero crossings
+    ssc = ((np.diff(np.sign(np.diff(data_row.values))) != 0)).sum()  # Slope sign changes
+    wl = np.abs(np.diff(data_row.values)).sum()  # Waveform length
+
+    return pd.Series([mean, std_dev, variance, median, data_range, mav, zc, ssc, wl])
+
+def predict_gesture(data):
+    features = extract_features(data)
+    prediction = model.predict([features])
+    gesture_name = label_encoder.inverse_transform(prediction)
+    return gesture_name[0]
+
+# Main loop
+while True:
+    # Initialize the I2C bus and ADC for peak detection
+    i2c = busio.I2C(board.SCL, board.SDA)
+    ads = ADS.ADS1115(i2c)
+    chan = AnalogIn(ads, ADS.P0)
+
+    # Wait for a peak in the EMG signal
+    if chan.value >= 10000:
+        emg_data = collect_emg_data()
+        print(emg_data)
+        predicted_gesture = predict_gesture(emg_data)
+        print(f"Predicted Gesture: {predicted_gesture}")
+        
+        if predicted_gesture in sounds:
+            pygame.mixer.music.load(sounds[predicted_gesture])
+            pygame.mixer.music.play()
+
+    
